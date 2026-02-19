@@ -1,0 +1,39 @@
+//
+//  CoreBridge.h
+//  RTRBaseline
+//
+//  Created by Hoàng Trí Tâm on 19/2/26.
+//
+
+#pragma once
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Shared vertex layout (matches Metal shader)
+typedef struct CoreVertex {
+    float position[3];
+    float color[3];
+} CoreVertex;
+
+// Shared uniforms (matches Metal shader)
+typedef struct CoreUniforms {
+    float mvp[16]; // column-major 4x4
+} CoreUniforms;
+
+// Allocates a simple triangle. Call coreFreeTriangle to free.
+void coreMakeTriangle(CoreVertex** outVertices, int32_t* outVertexCount,
+                      uint16_t** outIndices, int32_t* outIndexCount);
+
+// Frees allocations returned by coreMakeTriangle.
+void coreFreeTriangle(CoreVertex* vertices, uint16_t* indices);
+
+// Fills CoreUniforms with a default rotating model + perspective projection.
+void coreMakeDefaultUniforms(CoreUniforms* outUniforms, float timeSeconds, float aspect);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
