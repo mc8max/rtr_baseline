@@ -29,6 +29,8 @@ final class Renderer {
     
     private weak var hud: HUDModel?
     
+    private var depthTexture: MTLTexture?
+    
     struct Vertex {
         var position: SIMD3<Float>
         var color: SIMD3<Float>
@@ -54,7 +56,7 @@ final class Renderer {
     }
 
     func drawableSizeWillChange(size: CGSize) {
-        // Keep for later: projection updates, offscreen targets, etc.
+        rebuildDepthTextureIfNeeded(for: size)
     }
 
     func draw(in view: MTKView) {
@@ -83,9 +85,40 @@ final class Renderer {
         coreMakeDefaultUniforms(&currentUniforms, self.elapsedTime, aspect)
     }
     
+    private func rebuildDepthTextureIfNeeded(for size: CGSize) {
+        guard self.device != nil else { return }
+        let width = max(1, Int(size.width))
+        let height = max(1, Int(size.height))
+
+        if let tex = self.depthTexture,
+           tex.width == width,
+           tex.height == height {
+            return
+        }
+
+        let d = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .depth32Float,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        d.usage = [.renderTarget]
+        d.storageMode = .private
+
+        self.depthTexture = self.device.makeTexture(descriptor: d)
+    }
+    
     private func render(in view: MTKView) {
         guard let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor else { return }
+        
+        if self.depthTexture == nil {
+            rebuildDepthTextureIfNeeded(for: view.drawableSize)
+        }
+        rpd.depthAttachment.texture = depthTexture
+        rpd.depthAttachment.loadAction = .clear
+        rpd.depthAttachment.storeAction = .dontCare
+        rpd.depthAttachment.clearDepth = 1.0
         
         guard let cmd = self.queue.makeCommandBuffer(),
               let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
@@ -108,22 +141,6 @@ final class Renderer {
         cmd.present(drawable)
         cmd.commit()
     }
-    
-    private func buildVertexDescriptor(view: MTKView) -> MTLVertexDescriptor {
-        let vDesc = MTLVertexDescriptor()
-        vDesc.attributes[0].format = .float3
-        vDesc.attributes[0].offset = 0
-        vDesc.attributes[0].bufferIndex = 0
-        
-        vDesc.attributes[1].format = .float3
-        vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
-        vDesc.attributes[1].bufferIndex = 0
-        
-        vDesc.layouts[0].stride = MemoryLayout<Vertex>.stride
-        vDesc.layouts[0].stepFunction = .perVertex
-        vDesc.layouts[0].stepRate = 1
-        return vDesc
-    }
 
     private func buildPipeline(view: MTKView) {
         guard let library = self.device.makeDefaultLibrary() else {
@@ -142,9 +159,7 @@ final class Renderer {
         desc.fragmentFunction = ffn
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
         desc.vertexDescriptor = self.buildVertexDescriptor(view: view)
-        
-        // Depth is optional in baseline. Uncomment when you add a depth attachment.
-        // desc.depthAttachmentPixelFormat = .depth32Float
+        desc.depthAttachmentPixelFormat = .depth32Float
 
         do {
             self.pipeline = try self.device.makeRenderPipelineState(descriptor: desc)
@@ -152,13 +167,33 @@ final class Renderer {
             fatalError("Failed to create pipeline state: \(error)")
         }
 
-        // Depth state placeholder (disabled by default because we don't create a depth texture yet)
-        // let dsDesc = MTLDepthStencilDescriptor()
-        // dsDesc.isDepthWriteEnabled = true
-        // dsDesc.depthCompareFunction = .lessEqual
-        // depthState = device.makeDepthStencilState(descriptor: dsDesc)
+        let dsDesc = self.buildDepthStateDescriptor()
+        self.depthState = self.device.makeDepthStencilState(descriptor: dsDesc)
     }
 
+    private func buildVertexDescriptor(view: MTKView) -> MTLVertexDescriptor {
+        let vDesc = MTLVertexDescriptor()
+        vDesc.attributes[0].format = .float3
+        vDesc.attributes[0].offset = 0
+        vDesc.attributes[0].bufferIndex = 0
+        
+        vDesc.attributes[1].format = .float3
+        vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vDesc.attributes[1].bufferIndex = 0
+        
+        vDesc.layouts[0].stride = MemoryLayout<Vertex>.stride
+        vDesc.layouts[0].stepFunction = .perVertex
+        vDesc.layouts[0].stepRate = 1
+        return vDesc
+    }
+    
+    private func buildDepthStateDescriptor() -> MTLDepthStencilDescriptor {
+        let dsDesc = MTLDepthStencilDescriptor()
+        dsDesc.isDepthWriteEnabled = true
+        dsDesc.depthCompareFunction = .lessEqual
+        return dsDesc
+    }
+    
     private func uploadGeometry() {
         // Get data from C++ core
         var vPtr: UnsafeMutablePointer<CoreVertex>?
