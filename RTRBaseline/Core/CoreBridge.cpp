@@ -39,7 +39,8 @@ void coreMakeDefaultUniforms(CoreUniforms* outUniforms, float timeSeconds, float
     if (!outUniforms) return;
 
     using namespace coremath;
-
+    
+    // ASK: what are these functions? especially lookAt and perspective
     const Mat4 model = rotationY(timeSeconds) * rotationX(timeSeconds * 0.5f);
     const Mat4 view  = lookAt({0.0f, 0.0f, 2.2f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
     const Mat4 proj  = perspective(60.0f * kDegToRad, aspect, 0.1f, 100.0f);

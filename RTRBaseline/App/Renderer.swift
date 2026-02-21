@@ -24,6 +24,9 @@ final class Renderer {
     private var startTime = CACurrentMediaTime()
     private var lastFrameTime = CACurrentMediaTime()
 
+    private var elapsedTime: Float = 0
+    private var currentUniforms = CoreUniforms()
+    
     private weak var hud: HUDModel?
     
     struct Vertex {
@@ -55,35 +58,49 @@ final class Renderer {
     }
 
     func draw(in view: MTKView) {
+        let now = CACurrentMediaTime()
+        
+        // Ensure minimum time change is 0.0001s, which shall avoid value overflow in the FPS
+        let dt = max(0.0001, now - self.lastFrameTime)
+
+        self.lastFrameTime = now
+        
+        self.updateHUD(dt: dt)
+        self.update(dt: dt, view: view)
+        self.render(in: view)
+    }
+    
+    private func update(dt: Double, view: MTKView) {
+        // Advance simulation time (useful once you have multiple animated objects/camera)
+        self.elapsedTime += Float(dt)
+
+        // Guard against temporary zero-sized drawable during resize/minimize
+        let w = max(1.0, view.drawableSize.width)
+        let h = max(1.0, view.drawableSize.height)
+        let aspect = Float(w / h)
+
+        // Build current frame uniforms (MVP) via C++ core
+        coreMakeDefaultUniforms(&currentUniforms, self.elapsedTime, aspect)
+    }
+    
+    private func render(in view: MTKView) {
         guard let drawable = view.currentDrawable,
               let rpd = view.currentRenderPassDescriptor else { return }
-
-        let now = CACurrentMediaTime()
-        let dt = max(0.0001, now - lastFrameTime)
-        lastFrameTime = now
-        updateHUD(dt: dt)
-
-        let t = Float(now - startTime)
-        let aspect = Float(max(1.0, view.drawableSize.width) / max(1.0, view.drawableSize.height))
-
-        // Build MVP in C++ core (keeps Swift renderer minimal)
-        var uniforms = CoreUniforms()
-        coreMakeDefaultUniforms(&uniforms, t, aspect)
-
-        guard let cmd = queue.makeCommandBuffer(),
+        
+        guard let cmd = self.queue.makeCommandBuffer(),
               let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
 
-        enc.setRenderPipelineState(pipeline)
-        if let ds = depthState { enc.setDepthStencilState(ds) }
+        enc.setRenderPipelineState(self.pipeline)
+        if let ds = self.depthState { enc.setDepthStencilState(ds) }
 
-        enc.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        enc.setVertexBytes(&uniforms, length: MemoryLayout<CoreUniforms>.stride, index: 1)
+        enc.setVertexBuffer(self.vertexBuffer, offset: 0, index: 0)
+        enc.setVertexBytes(&self.currentUniforms, length: MemoryLayout<CoreUniforms>.stride, index: 1)
 
         enc.drawIndexedPrimitives(
             type: .triangle,
-            indexCount: indexCount,
+            indexCount: self.indexCount,
             indexType: .uint16,
-            indexBuffer: indexBuffer,
+            indexBuffer: self.indexBuffer,
             indexBufferOffset: 0
         )
 
@@ -91,9 +108,25 @@ final class Renderer {
         cmd.present(drawable)
         cmd.commit()
     }
+    
+    private func buildVertexDescriptor(view: MTKView) -> MTLVertexDescriptor {
+        let vDesc = MTLVertexDescriptor()
+        vDesc.attributes[0].format = .float3
+        vDesc.attributes[0].offset = 0
+        vDesc.attributes[0].bufferIndex = 0
+        
+        vDesc.attributes[1].format = .float3
+        vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vDesc.attributes[1].bufferIndex = 0
+        
+        vDesc.layouts[0].stride = MemoryLayout<Vertex>.stride
+        vDesc.layouts[0].stepFunction = .perVertex
+        vDesc.layouts[0].stepRate = 1
+        return vDesc
+    }
 
     private func buildPipeline(view: MTKView) {
-        guard let library = device.makeDefaultLibrary() else {
+        guard let library = self.device.makeDefaultLibrary() else {
             fatalError("Failed to load default Metal library. Ensure Shaders/*.metal is in the target.")
         }
 
@@ -108,28 +141,13 @@ final class Renderer {
         desc.vertexFunction = vfn
         desc.fragmentFunction = ffn
         desc.colorAttachments[0].pixelFormat = view.colorPixelFormat
+        desc.vertexDescriptor = self.buildVertexDescriptor(view: view)
         
-        let vDesc = MTLVertexDescriptor()
-        vDesc.attributes[0].format = .float3
-        vDesc.attributes[0].offset = 0
-        vDesc.attributes[0].bufferIndex = 0
-        
-        vDesc.attributes[1].format = .float3
-        vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
-        vDesc.attributes[1].bufferIndex = 0
-        
-        vDesc.layouts[0].stride = MemoryLayout<Vertex>.stride
-        vDesc.layouts[0].stepFunction = .perVertex
-        vDesc.layouts[0].stepRate = 1
-        
-        desc.vertexDescriptor = vDesc
-        
-
         // Depth is optional in baseline. Uncomment when you add a depth attachment.
         // desc.depthAttachmentPixelFormat = .depth32Float
 
         do {
-            pipeline = try device.makeRenderPipelineState(descriptor: desc)
+            self.pipeline = try self.device.makeRenderPipelineState(descriptor: desc)
         } catch {
             fatalError("Failed to create pipeline state: \(error)")
         }
@@ -154,15 +172,15 @@ final class Renderer {
             fatalError("coreMakeTriangle returned null pointers.")
         }
 
-        indexCount = Int(iCount)
+        self.indexCount = Int(iCount)
 
-        vertexBuffer = device.makeBuffer(
+        self.vertexBuffer = self.device.makeBuffer(
             bytes: vPtrUnwrapped,
             length: Int(vCount) * MemoryLayout<CoreVertex>.stride,
             options: [.storageModeShared]
         )
 
-        indexBuffer = device.makeBuffer(
+        self.indexBuffer = self.device.makeBuffer(
             bytes: iPtrUnwrapped,
             length: Int(iCount) * MemoryLayout<UInt16>.stride,
             options: [.storageModeShared]

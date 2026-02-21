@@ -30,7 +30,7 @@ struct MetalView: NSViewRepresentable {
         }
     }
 
-    @ObservedObject var hud: HUDModel
+    var hud: HUDModel
 
     func makeCoordinator() -> Coordinator {
         Coordinator(hud: hud)
