@@ -36,6 +36,10 @@ struct MetalView: NSViewRepresentable {
         func rendererZoom(delta: Float) {
             renderer.zoom(delta: delta)
         }
+
+        func rendererSetDebugMode(_ mode: Int32) {
+            renderer.setDebugMode(mode)
+        }
     }
 
     var hud: HUDModel
@@ -63,6 +67,9 @@ struct MetalView: NSViewRepresentable {
         }
         v.onZoom = { delta in
             context.coordinator.rendererZoom(delta: delta)
+        }
+        v.onDebugModeKey = { mode in
+            context.coordinator.rendererSetDebugMode(mode)
         }
 
         context.coordinator.attach(to: v)

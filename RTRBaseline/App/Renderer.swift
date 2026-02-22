@@ -11,6 +11,27 @@ import MetalKit
 import QuartzCore
 import simd
 
+private enum DebugMode: Int32 {
+    case vertexColor = 0
+    case flatWhite = 1
+    case rawDepth = 2
+
+    var label: String {
+        switch self {
+        case .vertexColor: return "VertexColor"
+        case .flatWhite: return "FlatWhite"
+        case .rawDepth: return "RawDepth"
+        }
+    }
+}
+
+private struct FragmentDebugParams {
+    var mode: Int32
+    var pad0: Int32 = 0
+    var pad1: Int32 = 0
+    var pad2: Int32 = 0
+}
+
 final class Renderer {
     private var device: MTLDevice!
     private var queue: MTLCommandQueue!
@@ -37,6 +58,9 @@ final class Renderer {
     private var cameraYaw: Float = 0.0
     private var cameraPitch: Float = 0.3
 
+    // Debug Mode
+    private var debugMode: DebugMode = .vertexColor
+
     init(hud: HUDModel) {
         self.hud = hud
     }
@@ -54,6 +78,10 @@ final class Renderer {
 
         buildPipeline(view: view)
         uploadGeometry()
+        uploadGeometry()
+        
+        // Initialize HUD debug mode with value from this class
+        setDebugMode(self.debugMode.rawValue)
     }
 
     func drawableSizeWillChange(size: CGSize) {
@@ -154,6 +182,11 @@ final class Renderer {
             length: MemoryLayout<CoreUniforms>.stride,
             index: 1
         )
+        
+        var fragParams = FragmentDebugParams(mode: debugMode.rawValue)
+        enc.setFragmentBytes(&fragParams,
+                             length: MemoryLayout<FragmentDebugParams>.stride,
+                             index: 0)
 
         enc.drawIndexedPrimitives(
             type: .triangle,
@@ -279,5 +312,14 @@ final class Renderer {
         cameraRadius *= zoomFactor
 
         cameraRadius = min(max(cameraRadius, 0.8), 20.0)
+    }
+
+    func setDebugMode(_ modeRaw: Int32) {
+        guard let mode = DebugMode(rawValue: modeRaw) else { return }
+        debugMode = mode
+
+        DispatchQueue.main.async { [weak hud] in
+            hud?.updateMode(mode.label)
+        }
     }
 }

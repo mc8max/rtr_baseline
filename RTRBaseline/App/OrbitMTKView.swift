@@ -5,12 +5,13 @@
 //  Created by Hoàng Trí Tâm on 22/2/26.
 //
 
-import MetalKit
 import AppKit
+import MetalKit
 
 final class OrbitMTKView: MTKView {
     var onOrbitDrag: ((Float, Float) -> Void)?
     var onZoom: ((Float) -> Void)?
+    var onDebugModeKey: ((Int32) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -39,5 +40,18 @@ final class OrbitMTKView: MTKView {
         }
 
         onZoom?(Float(rawY))
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.charactersIgnoringModifiers {
+        case "1":
+            onDebugModeKey?(0)  // VertexColor
+        case "2":
+            onDebugModeKey?(1)  // FlatWhite
+        case "3":
+            onDebugModeKey?(2)  // RawDepth
+        default:
+            super.keyDown(with: event)
+        }
     }
 }

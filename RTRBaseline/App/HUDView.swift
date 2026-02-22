@@ -18,6 +18,8 @@ struct HUDView: View {
                 .font(.system(.body, design: .monospaced))
             Text(hud.msText)
                 .font(.system(.body, design: .monospaced))
+            Text(hud.modeText)
+                .font(.system(.body, design: .monospaced))
         }
         .padding(10)
         .background(.ultraThinMaterial)
