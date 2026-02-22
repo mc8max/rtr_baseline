@@ -85,15 +85,18 @@ inline Mat4 rotationY(float rad) {
 }
 
 inline Mat4 perspective(float fovyRad, float aspect, float zNear, float zFar) {
-    // Right-handed, OpenGL-style clip space z in [-1, 1]
+    // Right-handed, Metal-style clip space z in [0, 1]
     const float f = 1.0f / std::tan(fovyRad * 0.5f);
 
     Mat4 r{};
     r.m[0][0] = f / aspect;
     r.m[1][1] = f;
-    r.m[2][2] = (zFar + zNear) / (zNear - zFar);
+
+    // RH, z_view is negative in front of camera (with lookAt as implemented)
+    r.m[2][2] = zFar / (zNear - zFar);
     r.m[2][3] = -1.0f;
-    r.m[3][2] = (2.0f * zFar * zNear) / (zNear - zFar);
+    r.m[3][2] = (zFar * zNear) / (zNear - zFar);
+
     return r;
 }
 

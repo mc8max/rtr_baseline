@@ -24,12 +24,17 @@ typedef struct CoreUniforms {
     float mvp[16]; // column-major 4x4
 } CoreUniforms;
 
-// Allocates a simple triangle. Call coreFreeTriangle to free.
+// Allocates a simple triangle. Call coreFreeMesh to free.
 void coreMakeTriangle(CoreVertex** outVertices, int32_t* outVertexCount,
                       uint16_t** outIndices, int32_t* outIndexCount);
 
-// Frees allocations returned by coreMakeTriangle.
-void coreFreeTriangle(CoreVertex* vertices, uint16_t* indices);
+// Allocate a Cube. Call coreFreeMesh to free.
+void coreMakeCube(CoreVertex** outVertices, int32_t* outVertexCount,
+                  uint16_t** outIndices, int32_t* outIndexCount);
+
+
+// Frees allocations returned by coreMakeTriangle or coreMakeCube.
+void coreFreeMesh(CoreVertex* vertices, uint16_t* indices);
 
 // Fills CoreUniforms with a default rotating model + perspective projection.
 void coreMakeDefaultUniforms(CoreUniforms* outUniforms, float timeSeconds, float aspect);

@@ -30,11 +30,6 @@ final class Renderer {
     private weak var hud: HUDModel?
     
     private var depthTexture: MTLTexture?
-    
-    struct Vertex {
-        var position: SIMD3<Float>
-        var color: SIMD3<Float>
-    }
 
     init(hud: HUDModel) {
         self.hud = hud
@@ -181,7 +176,7 @@ final class Renderer {
         vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
         vDesc.attributes[1].bufferIndex = 0
         
-        vDesc.layouts[0].stride = MemoryLayout<Vertex>.stride
+        vDesc.layouts[0].stride = MemoryLayout<CoreVertex>.stride
         vDesc.layouts[0].stepFunction = .perVertex
         vDesc.layouts[0].stepRate = 1
         return vDesc
@@ -201,7 +196,7 @@ final class Renderer {
         var iPtr: UnsafeMutablePointer<UInt16>?
         var iCount: Int32 = 0
 
-        coreMakeTriangle(&vPtr, &vCount, &iPtr, &iCount)
+        coreMakeCube(&vPtr, &vCount, &iPtr, &iCount)
 
         guard let vPtrUnwrapped = vPtr, let iPtrUnwrapped = iPtr else {
             fatalError("coreMakeTriangle returned null pointers.")
@@ -222,7 +217,7 @@ final class Renderer {
         )
 
         // Free allocations from C++ core
-        coreFreeTriangle(vPtrUnwrapped, iPtrUnwrapped)
+        coreFreeMesh(vPtrUnwrapped, iPtrUnwrapped)
     }
 
     private func updateHUD(dt: Double) {
