@@ -50,6 +50,8 @@ final class OrbitMTKView: MTKView {
             onDebugModeKey?(1)  // FlatWhite
         case "3":
             onDebugModeKey?(2)  // RawDepth
+        case "4":
+            onDebugModeKey?(3) // LinearDepth
         default:
             super.keyDown(with: event)
         }

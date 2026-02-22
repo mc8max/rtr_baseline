@@ -15,12 +15,14 @@ private enum DebugMode: Int32 {
     case vertexColor = 0
     case flatWhite = 1
     case rawDepth = 2
+    case linearDepth = 3
 
     var label: String {
         switch self {
         case .vertexColor: return "VertexColor"
         case .flatWhite: return "FlatWhite"
         case .rawDepth: return "RawDepth"
+        case .linearDepth: return "LinearDepth"
         }
     }
 }
@@ -28,8 +30,8 @@ private enum DebugMode: Int32 {
 private struct FragmentDebugParams {
     var mode: Int32
     var pad0: Int32 = 0
-    var pad1: Int32 = 0
-    var pad2: Int32 = 0
+    var nearZ: Float
+    var farZ: Float
 }
 
 final class Renderer {
@@ -57,6 +59,8 @@ final class Renderer {
     private var cameraRadius: Float = 2.5
     private var cameraYaw: Float = 0.0
     private var cameraPitch: Float = 0.3
+    private let cameraNearZ: Float = 0.1
+    private let cameraFarZ: Float = 100.0
 
     // Debug Mode
     private var debugMode: DebugMode = .vertexColor
@@ -79,7 +83,7 @@ final class Renderer {
         buildPipeline(view: view)
         uploadGeometry()
         uploadGeometry()
-        
+
         // Initialize HUD debug mode with value from this class
         setDebugMode(self.debugMode.rawValue)
     }
@@ -182,11 +186,17 @@ final class Renderer {
             length: MemoryLayout<CoreUniforms>.stride,
             index: 1
         )
-        
-        var fragParams = FragmentDebugParams(mode: debugMode.rawValue)
-        enc.setFragmentBytes(&fragParams,
-                             length: MemoryLayout<FragmentDebugParams>.stride,
-                             index: 0)
+
+        var fragParams = FragmentDebugParams(
+            mode: debugMode.rawValue,
+            nearZ: self.cameraNearZ,
+            farZ: self.cameraFarZ
+        )
+        enc.setFragmentBytes(
+            &fragParams,
+            length: MemoryLayout<FragmentDebugParams>.stride,
+            index: 0
+        )
 
         enc.drawIndexedPrimitives(
             type: .triangle,
