@@ -26,10 +26,16 @@ final class Renderer {
 
     private var elapsedTime: Float = 0
     private var currentUniforms = CoreUniforms()
-    
+
     private weak var hud: HUDModel?
-    
+
     private var depthTexture: MTLTexture?
+
+    // Camera States
+    private var cameraTarget = SIMD3<Float>(0, 0, 0)
+    private var cameraRadius: Float = 2.5
+    private var cameraYaw: Float = 0.0
+    private var cameraPitch: Float = 0.3
 
     init(hud: HUDModel) {
         self.hud = hud
@@ -56,17 +62,17 @@ final class Renderer {
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
-        
+
         // Ensure minimum time change is 0.0001s, which shall avoid value overflow in the FPS
         let dt = max(0.0001, now - self.lastFrameTime)
 
         self.lastFrameTime = now
-        
+
         self.updateHUD(dt: dt)
         self.update(dt: dt, view: view)
         self.render(in: view)
     }
-    
+
     private func update(dt: Double, view: MTKView) {
         // Advance simulation time (useful once you have multiple animated objects/camera)
         self.elapsedTime += Float(dt)
@@ -76,18 +82,37 @@ final class Renderer {
         let h = max(1.0, view.drawableSize.height)
         let aspect = Float(w / h)
 
-        // Build current frame uniforms (MVP) via C++ core
-        coreMakeDefaultUniforms(&currentUniforms, self.elapsedTime, aspect)
+        var target = (
+            cameraTarget.x,
+            cameraTarget.y,
+            cameraTarget.z
+        )
+
+        withUnsafePointer(to: &target) { targetPtr in
+            targetPtr.withMemoryRebound(to: Float.self, capacity: 3) {
+                floatPtr in
+                coreMakeOrbitUniforms(
+                    &currentUniforms,
+                    elapsedTime,
+                    aspect,
+                    floatPtr,
+                    cameraRadius,
+                    cameraYaw,
+                    cameraPitch
+                )
+            }
+        }
     }
-    
+
     private func rebuildDepthTextureIfNeeded(for size: CGSize) {
         guard self.device != nil else { return }
         let width = max(1, Int(size.width))
         let height = max(1, Int(size.height))
 
         if let tex = self.depthTexture,
-           tex.width == width,
-           tex.height == height {
+            tex.width == width,
+            tex.height == height
+        {
             return
         }
 
@@ -102,11 +127,12 @@ final class Renderer {
 
         self.depthTexture = self.device.makeTexture(descriptor: d)
     }
-    
+
     private func render(in view: MTKView) {
         guard let drawable = view.currentDrawable,
-              let rpd = view.currentRenderPassDescriptor else { return }
-        
+            let rpd = view.currentRenderPassDescriptor
+        else { return }
+
         if self.depthTexture == nil {
             rebuildDepthTextureIfNeeded(for: view.drawableSize)
         }
@@ -114,15 +140,20 @@ final class Renderer {
         rpd.depthAttachment.loadAction = .clear
         rpd.depthAttachment.storeAction = .dontCare
         rpd.depthAttachment.clearDepth = 1.0
-        
+
         guard let cmd = self.queue.makeCommandBuffer(),
-              let enc = cmd.makeRenderCommandEncoder(descriptor: rpd) else { return }
+            let enc = cmd.makeRenderCommandEncoder(descriptor: rpd)
+        else { return }
 
         enc.setRenderPipelineState(self.pipeline)
         if let ds = self.depthState { enc.setDepthStencilState(ds) }
 
         enc.setVertexBuffer(self.vertexBuffer, offset: 0, index: 0)
-        enc.setVertexBytes(&self.currentUniforms, length: MemoryLayout<CoreUniforms>.stride, index: 1)
+        enc.setVertexBytes(
+            &self.currentUniforms,
+            length: MemoryLayout<CoreUniforms>.stride,
+            index: 1
+        )
 
         enc.drawIndexedPrimitives(
             type: .triangle,
@@ -139,7 +170,9 @@ final class Renderer {
 
     private func buildPipeline(view: MTKView) {
         guard let library = self.device.makeDefaultLibrary() else {
-            fatalError("Failed to load default Metal library. Ensure Shaders/*.metal is in the target.")
+            fatalError(
+                "Failed to load default Metal library. Ensure Shaders/*.metal is in the target."
+            )
         }
 
         let vfn = library.makeFunction(name: "vs_main")
@@ -157,7 +190,9 @@ final class Renderer {
         desc.depthAttachmentPixelFormat = .depth32Float
 
         do {
-            self.pipeline = try self.device.makeRenderPipelineState(descriptor: desc)
+            self.pipeline = try self.device.makeRenderPipelineState(
+                descriptor: desc
+            )
         } catch {
             fatalError("Failed to create pipeline state: \(error)")
         }
@@ -171,24 +206,24 @@ final class Renderer {
         vDesc.attributes[0].format = .float3
         vDesc.attributes[0].offset = 0
         vDesc.attributes[0].bufferIndex = 0
-        
+
         vDesc.attributes[1].format = .float3
         vDesc.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
         vDesc.attributes[1].bufferIndex = 0
-        
+
         vDesc.layouts[0].stride = MemoryLayout<CoreVertex>.stride
         vDesc.layouts[0].stepFunction = .perVertex
         vDesc.layouts[0].stepRate = 1
         return vDesc
     }
-    
+
     private func buildDepthStateDescriptor() -> MTLDepthStencilDescriptor {
         let dsDesc = MTLDepthStencilDescriptor()
         dsDesc.isDepthWriteEnabled = true
         dsDesc.depthCompareFunction = .lessEqual
         return dsDesc
     }
-    
+
     private func uploadGeometry() {
         // Get data from C++ core
         var vPtr: UnsafeMutablePointer<CoreVertex>?
@@ -226,5 +261,23 @@ final class Renderer {
         DispatchQueue.main.async { [weak hud] in
             hud?.update(fps: fps, frameMs: ms)
         }
+    }
+
+    func orbit(deltaX: Float, deltaY: Float) {
+        let sensitivity: Float = 0.01
+        cameraYaw += deltaX * sensitivity
+        cameraPitch += deltaY * sensitivity
+        cameraPitch = min(max(cameraPitch, -1.4), 1.4)
+    }
+
+    func zoom(delta: Float) {
+        // delta > 0 / < 0 direction depends on device preference; flip sign if needed.
+        // Multiplicative zoom feels better than linear for orbit cameras.
+        let sensitivity: Float = 0.002
+
+        let zoomFactor = exp(delta * sensitivity)
+        cameraRadius *= zoomFactor
+
+        cameraRadius = min(max(cameraRadius, 0.8), 20.0)
     }
 }

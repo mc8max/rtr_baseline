@@ -39,6 +39,15 @@ void coreFreeMesh(CoreVertex* vertices, uint16_t* indices);
 // Fills CoreUniforms with a default rotating model + perspective projection.
 void coreMakeDefaultUniforms(CoreUniforms* outUniforms, float timeSeconds, float aspect);
 
+// Camera Introduction
+void coreMakeOrbitUniforms(CoreUniforms* outUniforms,
+                           float timeSeconds,
+                           float aspect,
+                           const float target[3],
+                           float radius,
+                           float yaw,
+                           float pitch);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
